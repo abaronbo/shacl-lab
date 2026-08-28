@@ -1,0 +1,50 @@
+[
+  {
+    "name": "html5rdf",
+    "version": "1.2.1",
+    "filename": "html5rdf-1.2.1-py2.py3-none-any.whl",
+    "sha256": "1f519121bc366af3e485310dc8041d2e86e5173c1a320fac3dc9d2604069b83e"
+  },
+  {
+    "name": "owlrl",
+    "version": "7.6.2",
+    "filename": "owlrl-7.6.2-py3-none-any.whl",
+    "sha256": "83347bf7f133979e87b2b18695d51d25510b99cec3f6919b5df05d4fbf058ae0"
+  },
+  {
+    "name": "packaging",
+    "version": "26.3",
+    "filename": "packaging-26.3-py3-none-any.whl",
+    "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+  },
+  {
+    "name": "prettytable",
+    "version": "3.18.0",
+    "filename": "prettytable-3.18.0-py3-none-any.whl",
+    "sha256": "b3346e0e6f79180833aebaac088ae926340586cf6d7d991b9eb125b65f72313a"
+  },
+  {
+    "name": "pyparsing",
+    "version": "3.3.2",
+    "filename": "pyparsing-3.3.2-py3-none-any.whl",
+    "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d"
+  },
+  {
+    "name": "pyshacl",
+    "version": "0.40.1",
+    "filename": "pyshacl-0.40.1-py3-none-any.whl",
+    "sha256": "27dd58c8ddfa103303b4a8c40b2c666332ffc912dbcd3137f7adc7b7bc5e6bda"
+  },
+  {
+    "name": "rdflib",
+    "version": "7.6.0",
+    "filename": "rdflib-7.6.0-py3-none-any.whl",
+    "sha256": "30c0a3ebf4c0e09215f066be7246794b6492e054e782d7ac2a34c9f70a15e0dd"
+  },
+  {
+    "name": "wcwidth",
+    "version": "0.8.3",
+    "filename": "wcwidth-0.8.3-py3-none-any.whl",
+    "sha256": "d5b73dba6158a595ec9370350e7f2637bcac8d6c5e4fde34f30fcffb6103a5e4"
+  }
+]

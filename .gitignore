@@ -1,0 +1,6 @@
+node_modules
+dist
+# generated from the lockfile-pinned pyodide npm package by scripts/vendor-pyodide.mjs
+public/pyodide/
+test-results
+playwright-report

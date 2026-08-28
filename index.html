@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- GitHub Pages can't set headers, so CSP ships as a meta tag.
+         Known limits: frame-ancestors is ignored in meta CSP, and the
+         validation worker doesn't inherit this policy (its network access
+         is disabled inside the worker itself instead). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; object-src 'none'; require-trusted-types-for 'script'; trusted-types default"
+    />
+    <title>SHACL-SPARQL Playground</title>
+  </head>
+  <body>
+    <h1>SHACL-SPARQL Playground — Slice 1 spike</h1>
+    <pre id="out"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

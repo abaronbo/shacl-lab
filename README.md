@@ -9,8 +9,9 @@ Try it: **https://abaronbo.github.io/shacl-lab/**
 - Uses pySHACL (0.40.1) with [rdflib](https://github.com/RDFLib/rdflib), compiled to WebAssembly and loaded once at startup
 - Two editors with Turtle syntax highlighting, each accepting turtle, json-ld, nt, xml or trig
 - Validation runs automatically on edit, or on demand with the Validate button
-- SHACL-SPARQL support: sh:sparql constraints, SPARQL-based targets and sh:SPARQLRule all work
-- Report shown three ways: result cards, pySHACL's human readable text, and the raw report graph (turtle, json-ld, nt or xml)
+- SHACL-SPARQL and SHACL-AF support, as implemented by pySHACL: SPARQL constraints (sh:sparql), SPARQL-based targets (sh:SPARQLTarget, sh:SPARQLTargetType), SHACL rules (sh:TripleRule, sh:SPARQLRule), SPARQL-based constraint components (sh:SPARQLSelectValidator, sh:SPARQLAskValidator) and SHACL functions (sh:SPARQLFunction)
+- Every validation also runs the rules from the shapes graph; the derived triples show up in the Inferred triples tab with a count
+- Validation report shown as result cards, pySHACL's human readable text, or the raw report graph (turtle, json-ld, nt or xml)
 - Built-in examples, from the W3C core sample to SPARQL rules
 - Share button that packs the whole session (editors, formats, settings) into the URL, so a link reproduces it exactly
 - Parse errors are reported per pane without losing the last good report
@@ -21,7 +22,7 @@ Try it: **https://abaronbo.github.io/shacl-lab/**
 The Settings menu maps directly to pySHACL options, so the [pySHACL docs](https://github.com/RDFLib/pySHACL#full-cli-usage) apply:
 
 - **inference**: run rdflib inferencing on the data graph before validation. `none` (default), `rdfs`, `owlrl` or `both`.
-- **advanced**: enables SHACL Advanced Features such as SPARQL-based targets and SHACL rules. On by default.
+- **advanced**: enables SHACL Advanced Features such as SPARQL-based targets and SHACL rules during validation. On by default. The Inferred triples tab always applies the rules, regardless of this setting.
 - **meta_shacl**: validates the shapes graph itself against the SHACL-SHACL shapes first, to catch mistakes in the shapes.
 - **allow_infos**: results with severity sh:Info do not make the report non-conforming.
 - **allow_warnings**: same, but also for sh:Warning.

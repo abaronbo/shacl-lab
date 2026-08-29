@@ -1,5 +1,5 @@
 import { SHAPES_TTL, DATA_CONFORMING_TTL, DATA_VIOLATING_TTL } from './fixtures';
-import type { ValidationResult } from './worker';
+import type { InferenceResult, ValidationResult } from './worker';
 import {
   DEFAULT_OPTIONS,
   sanitizeFormat,
@@ -207,11 +207,16 @@ async function runApp(): Promise<void> {
   const shareBtn = document.querySelector<HTMLButtonElement>('#share-btn')!;
   const shareStatus = document.querySelector<HTMLSpanElement>('#share-status')!;
   const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-button'));
+  const tabValidation = document.querySelector<HTMLDivElement>('#tab-validation')!;
+  const tabInferred = document.querySelector<HTMLDivElement>('#tab-inferred')!;
+  const reportViewSelect = document.querySelector<HTMLSelectElement>('#report-view')!;
   const tabCards = document.querySelector<HTMLDivElement>('#tab-cards')!;
   const tabText = document.querySelector<HTMLDivElement>('#tab-text')!;
   const tabGraph = document.querySelector<HTMLDivElement>('#tab-graph')!;
   const reportTextEl = document.querySelector<HTMLPreElement>('#report-text')!;
   const reportGraphEl = document.querySelector<HTMLPreElement>('#report-graph')!;
+  const inferredStatusEl = document.querySelector<HTMLDivElement>('#inferred-status')!;
+  const inferredGraphEl = document.querySelector<HTMLPreElement>('#inferred-graph')!;
 
   const state = {
     shapesFormat: initial.shapesFormat,
@@ -341,16 +346,47 @@ async function runApp(): Promise<void> {
 
     setText(reportTextEl, result.text);
     setText(reportGraphEl, result.reportGraph);
+    renderInferencePart(result.inference);
   }
 
-  function renderRunError(message: string): void {
+  function renderInferencePart(inference: InferenceResult | undefined): void {
+    if (!inference) {
+      markInferredStale();
+      return;
+    }
+    if ('error' in inference) {
+      setText(inferredStatusEl, `Inference error: ${inference.error}`);
+      setText(inferredGraphEl, '');
+    } else {
+      setText(
+        inferredStatusEl,
+        inference.inferredCount === 0
+          ? 'No new triples were inferred.'
+          : `${inference.inferredCount} new triple${inference.inferredCount === 1 ? '' : 's'} inferred — data graph now has ${inference.totalCount} triples in total.`,
+      );
+      setText(inferredGraphEl, inference.inferredGraph);
+    }
+  }
+
+  const INFERRED_STALE_PREFIX = '(stale — showing the previous run) ';
+
+  function markInferredStale(): void {
+    const current = inferredStatusEl.textContent ?? '';
+    if (!current.startsWith(INFERRED_STALE_PREFIX)) {
+      setText(inferredStatusEl, `${INFERRED_STALE_PREFIX}${current}`);
+    }
+  }
+
+  function renderRunError(message: string, inference?: InferenceResult): void {
     markStale();
     runStatus.hidden = false;
     setText(runStatus, `Validation error: ${message}`);
+    renderInferencePart(inference);
   }
 
   function renderTimeout(): void {
     markStale();
+    markInferredStale();
     runStatus.hidden = false;
     setText(runStatus, 'validation exceeded the time limit and was stopped');
   }
@@ -377,19 +413,21 @@ async function runApp(): Promise<void> {
     }, DEBOUNCE_MS);
   }
 
-  async function runPipeline(forceValidate: boolean): Promise<void> {
+  // Byte caps + per-pane parse checks shared by Validate and Infer; returns
+  // the editor texts only when both panes are parseable.
+  async function checkInputs(): Promise<{ shapesText: string; dataText: string } | null> {
     const shapesText = shapesEditor.getValue();
     const dataText = dataEditor.getValue();
 
     if (byteLength(shapesText) > MAX_INPUT_BYTES) {
       showPaneError(shapesErrorEl, 'Shapes input exceeds the 2MB limit.');
       markStale();
-      return;
+      return null;
     }
     if (byteLength(dataText) > MAX_INPUT_BYTES) {
       showPaneError(dataErrorEl, 'Data input exceeds the 2MB limit.');
       markStale();
-      return;
+      return null;
     }
 
     let shapesParse: { ok: boolean; error: string | null };
@@ -410,7 +448,7 @@ async function runApp(): Promise<void> {
     } catch {
       // Worker was terminated mid-check (hard-cap breach elsewhere); the
       // next edit or Validate click retries against the respawned worker.
-      return;
+      return null;
     }
 
     showPaneError(shapesErrorEl, shapesParse.ok ? null : shapesParse.error);
@@ -418,18 +456,26 @@ async function runApp(): Promise<void> {
 
     if (!shapesParse.ok || !dataParse.ok) {
       markStale();
-      return;
+      return null;
     }
+
+    return { shapesText, dataText };
+  }
+
+  async function runPipeline(forceValidate: boolean): Promise<void> {
+    const inputs = await checkInputs();
+    if (!inputs) return;
 
     if (!forceValidate && !state.autoValidateEnabled) return;
 
     state.options = currentOptions();
     window.__lastRunOptions = state.options;
-    validateRunner.run({
+    validateRunner.run<ValidationResult>({
       request: {
-        data: dataText,
+        type: 'validate',
+        data: inputs.dataText,
         dataFormat: state.dataFormat,
-        shapes: shapesText,
+        shapes: inputs.shapesText,
         shapesFormat: state.shapesFormat,
         reportFormat: state.reportFormat,
         options: state.options,
@@ -532,14 +578,24 @@ async function runApp(): Promise<void> {
     void runPipeline(true);
   });
 
-  for (const button of tabButtons) {
-    button.addEventListener('click', () => {
-      for (const b of tabButtons) b.classList.toggle('active', b === button);
-      tabCards.hidden = button.dataset.tab !== 'cards';
-      tabText.hidden = button.dataset.tab !== 'text';
-      tabGraph.hidden = button.dataset.tab !== 'graph';
-    });
+  function activateTab(name: string): void {
+    for (const b of tabButtons) b.classList.toggle('active', b.dataset.tab === name);
+    tabValidation.hidden = name !== 'validation';
+    tabInferred.hidden = name !== 'inferred';
   }
+  for (const button of tabButtons) {
+    button.addEventListener('click', () => activateTab(button.dataset.tab!));
+  }
+
+  function applyReportView(): void {
+    const view = reportViewSelect.value;
+    tabCards.hidden = view !== 'cards';
+    tabText.hidden = view !== 'text';
+    tabGraph.hidden = view !== 'graph';
+    reportFormatSelect.hidden = view !== 'graph';
+  }
+  reportViewSelect.addEventListener('change', applyReportView);
+  applyReportView();
 
   conformsBanner.className = 'conforms-banner';
   setText(conformsBanner, 'Not yet validated.');

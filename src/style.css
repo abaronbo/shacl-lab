@@ -287,6 +287,24 @@ select {
   display: none;
 }
 
+.report-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.view-panel[hidden] {
+  display: none;
+}
+
+.inferred-status {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+
 .result-card {
   border: 1px solid var(--border);
   border-radius: 6px;

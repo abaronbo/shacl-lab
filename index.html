@@ -107,23 +107,42 @@
           <div id="run-status" class="run-status" hidden></div>
           <div id="conforms-banner" class="conforms-banner"></div>
           <div class="tabs">
-            <button class="tab-button active" type="button" data-tab="cards">Results</button>
-            <button class="tab-button" type="button" data-tab="text">Text</button>
-            <button class="tab-button" type="button" data-tab="graph">Graph</button>
+            <button class="tab-button active" type="button" data-tab="validation">
+              Validation results
+            </button>
+            <button class="tab-button" type="button" data-tab="inferred">Inferred triples</button>
           </div>
-          <div id="tab-cards" class="tab-panel"></div>
-          <div id="tab-text" class="tab-panel" hidden><pre class="report-text" id="report-text"></pre></div>
-          <div id="tab-graph" class="tab-panel" hidden>
-            <div class="pane-header">
-              <span>Report graph</span>
-              <select id="report-format">
+          <div id="tab-validation" class="tab-panel">
+            <div class="report-controls">
+              <label
+                >View
+                <select id="report-view">
+                  <option value="cards">Results</option>
+                  <option value="text">Text</option>
+                  <option value="graph">Raw graph</option>
+                </select>
+              </label>
+              <select id="report-format" hidden>
                 <option value="turtle">turtle</option>
                 <option value="json-ld">json-ld</option>
                 <option value="nt">nt</option>
                 <option value="xml">xml</option>
               </select>
             </div>
-            <pre class="report-graph" id="report-graph"></pre>
+            <div id="tab-cards" class="view-panel"></div>
+            <div id="tab-text" class="view-panel" hidden>
+              <pre class="report-text" id="report-text"></pre>
+            </div>
+            <div id="tab-graph" class="view-panel" hidden>
+              <pre class="report-graph" id="report-graph"></pre>
+            </div>
+          </div>
+          <div id="tab-inferred" class="tab-panel" hidden>
+            <div id="inferred-status" class="inferred-status">
+              Not yet validated — every validation also applies the SHACL rules
+              (sh:TripleRule / sh:SPARQLRule) from the shapes and lists the derived triples here.
+            </div>
+            <pre class="report-graph" id="inferred-graph"></pre>
           </div>
         </section>
       </div>

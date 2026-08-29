@@ -1,12 +1,13 @@
-// Security #2: enforces "one run in flight, at most one queued" and the hard
-// 10s wall-clock cap from the UI thread (worker.terminate() on breach).
-import type { ValidationResult, ValidateRequest } from './worker';
-import type { WorkerClient } from './worker-client';
+// Security #2: enforces "one run in flight, at most one queued per request
+// kind" and the hard 10s wall-clock cap from the UI thread (worker.terminate()
+// on breach).
+import type { InferenceResult, ValidateRequest } from './worker';
+import { RunError, type WorkerClient } from './worker-client';
 
-export type ValidateJob = {
-  request: Omit<ValidateRequest, 'id' | 'type'>;
-  onResult: (result: ValidationResult) => void;
-  onError: (message: string) => void;
+export type RunJob<R> = {
+  request: Omit<ValidateRequest, 'id'>;
+  onResult: (result: R) => void;
+  onError: (message: string, inference?: InferenceResult) => void;
   onTimeout: () => void;
 };
 
@@ -14,7 +15,7 @@ const HARD_CAP_MS = 10_000;
 
 export class ValidateRunner {
   private inFlight = false;
-  private queued: ValidateJob | null = null;
+  private queued: RunJob<any>[] = [];
   private generation = 0;
 
   private readonly client: WorkerClient;
@@ -23,15 +24,17 @@ export class ValidateRunner {
     this.client = client;
   }
 
-  run(job: ValidateJob): void {
+  run<R>(job: RunJob<R>): void {
     if (this.inFlight) {
-      this.queued = job;
+      const i = this.queued.findIndex((q) => q.request.type === job.request.type);
+      if (i >= 0) this.queued[i] = job;
+      else this.queued.push(job);
       return;
     }
     void this.start(job);
   }
 
-  private async start(job: ValidateJob): Promise<void> {
+  private async start<R>(job: RunJob<R>): Promise<void> {
     this.inFlight = true;
     const gen = ++this.generation;
 
@@ -50,14 +53,13 @@ export class ValidateRunner {
       this.client.terminate('validation exceeded the time limit and was stopped');
       this.generation++;
       this.inFlight = false;
-      const next = this.queued;
-      this.queued = null;
+      const next = this.queued.shift();
       job.onTimeout();
       if (next) this.run(next);
     }, HARD_CAP_MS);
 
     this.client
-      .send<{ type: 'result'; result: ValidationResult }>({ type: 'validate', ...job.request })
+      .send<{ type: 'result'; result: R }>(job.request)
       .then((res) => {
         if (gen !== this.generation) return;
         window.clearTimeout(timeoutHandle);
@@ -68,14 +70,13 @@ export class ValidateRunner {
         if (gen !== this.generation) return;
         window.clearTimeout(timeoutHandle);
         this.finish();
-        job.onError(String(err));
+        job.onError(String(err), err instanceof RunError ? err.inference : undefined);
       });
   }
 
   private finish(): void {
     this.inFlight = false;
-    const next = this.queued;
-    this.queued = null;
+    const next = this.queued.shift();
     if (next) this.run(next);
   }
 }

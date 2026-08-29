@@ -1,7 +1,19 @@
 // Thin wrapper around the validation Worker: spawns lazily, resolves requests
 // by id, and lets the caller force a terminate + respawn-on-next-use (used
 // by the hard wall-clock cap in main.ts — Security #2).
-import type { ParseRequest, ValidateRequest } from './worker';
+import type { InferenceResult, ParseRequest, ValidateRequest } from './worker';
+
+// A failed run may still carry a usable inference outcome (e.g. a broken
+// SHACL rule aborts validate() but the rule error itself belongs in the
+// Inferred tab), so rejections keep it alongside the message.
+export class RunError extends Error {
+  readonly inference?: InferenceResult;
+
+  constructor(message: string, inference?: InferenceResult) {
+    super(message);
+    this.inference = inference;
+  }
+}
 
 type Pending = { resolve: (value: any) => void; reject: (reason: unknown) => void };
 
@@ -45,7 +57,7 @@ export class WorkerClient {
     const entry = this.pending.get(data.id);
     if (!entry) return;
     this.pending.delete(data.id);
-    if (data.type === 'error') entry.reject(new Error(data.error));
+    if (data.type === 'error') entry.reject(new RunError(data.error, data.inference));
     else entry.resolve(data);
   }
 

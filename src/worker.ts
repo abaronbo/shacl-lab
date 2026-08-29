@@ -30,6 +30,10 @@ export type ParseRequest = {
 
 export type WorkerRequest = ValidateRequest | ParseRequest;
 
+export type InferenceResult =
+  | { inferredCount: number; totalCount: number; inferredGraph: string }
+  | { error: string };
+
 export type ValidationResult = {
   conforms: boolean;
   results: Array<{
@@ -43,6 +47,9 @@ export type ValidationResult = {
   }>;
   text: string;
   reportGraph: string;
+  // SHACL-AF rule materialization runs alongside every validation; a broken
+  // rule must not take the validation report down with it, hence the error arm.
+  inference: InferenceResult;
 };
 
 const WHEELS = [
@@ -60,7 +67,7 @@ const PY_GLUE = `
 import json
 from rdflib import Graph
 from rdflib.namespace import RDF, SH
-from pyshacl import validate
+from pyshacl import validate, shacl_rules
 
 def check_parse(text, fmt):
     try:
@@ -70,17 +77,29 @@ def check_parse(text, fmt):
         return json.dumps({"ok": False, "error": str(e)})
 
 def run_validation(data_text, data_format, shapes_text, shapes_format, report_format, options):
+    options = options.to_py() if hasattr(options, "to_py") else options
     try:
-        return _run_validation(data_text, data_format, shapes_text, shapes_format, report_format, options)
+        data_g = Graph().parse(data=data_text, format=data_format)
+        shapes_g = Graph().parse(data=shapes_text, format=shapes_format)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+    inference = options.get("inference", "none")
+    # Rule materialization runs first and independently: with advanced=True a
+    # broken rule aborts validate() itself, and the Inferred tab must still
+    # explain why instead of silently keeping the previous run's content.
+    try:
+        inference_result = _compute_inference(data_g, shapes_g, inference, report_format)
+    except Exception as e:
+        inference_result = {"error": str(e)}
+    try:
+        return _run_validation(data_g, shapes_g, report_format, options, inference_result)
     except Exception as e:
         # str(e) carries pySHACL's own report (e.g. the meta-SHACL verdict);
-        # returning it here keeps Python tracebacks out of the UI.
-        return json.dumps({"error": str(e)})
+        # returning it here keeps Python tracebacks out of the UI. The
+        # inference outcome still ships so the UI can render it.
+        return json.dumps({"error": str(e), "inference": inference_result})
 
-def _run_validation(data_text, data_format, shapes_text, shapes_format, report_format, options):
-    options = options.to_py() if hasattr(options, "to_py") else options
-    data_g = Graph().parse(data=data_text, format=data_format)
-    shapes_g = Graph().parse(data=shapes_text, format=shapes_format)
+def _run_validation(data_g, shapes_g, report_format, options, inference_result):
     inference = options.get("inference", "none")
     conforms, rgraph, rtext = validate(
         data_g,
@@ -112,7 +131,32 @@ def _run_validation(data_text, data_format, shapes_text, shapes_format, report_f
         "results": results,
         "text": rtext,
         "reportGraph": report_graph,
+        "inference": inference_result,
     })
+
+def _iter_triples(g):
+    # shacl_rules may hand back a quad-yielding Dataset clone; normalize.
+    for t in g:
+        yield t[:3] if len(t) == 4 else t
+
+def _compute_inference(data_g, shapes_g, inference, output_format):
+    before = set(data_g)
+    expanded = shacl_rules(
+        data_g,
+        shacl_graph=shapes_g,
+        inference=inference if inference != "none" else None,
+    )
+    expanded_triples = set(_iter_triples(expanded))
+    inferred = Graph()
+    for prefix, ns in expanded.namespaces():
+        inferred.bind(prefix, ns)
+    for t in expanded_triples - before:
+        inferred.add(t)
+    return {
+        "inferredCount": len(inferred),
+        "totalCount": len(expanded_triples),
+        "inferredGraph": inferred.serialize(format=output_format),
+    }
 `;
 
 function lockdownNetwork() {
@@ -187,7 +231,12 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
         );
         const parsed = JSON.parse(json);
         if (parsed.error) {
-          self.postMessage({ type: 'error', id: msg.id, error: parsed.error });
+          self.postMessage({
+            type: 'error',
+            id: msg.id,
+            error: parsed.error,
+            inference: parsed.inference,
+          });
         } else {
           self.postMessage({ type: 'result', id: msg.id, result: parsed });
         }

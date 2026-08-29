@@ -86,3 +86,96 @@ test('a normal validation run produces zero CSP/Trusted-Types console violations
   await waitValidated(page);
   expect(violations, violations.join('\n')).toEqual([]);
 });
+
+async function fragmentFor(page: Page, state: unknown): Promise<string> {
+  return page.evaluate(async (input) => {
+    const stream = new Blob([JSON.stringify(input)])
+      .stream()
+      .pipeThrough(new CompressionStream('deflate-raw'));
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    let binary = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }, state);
+}
+
+const INFERENCE_SHAPES = `@prefix ex: <http://example.org/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+ex:TeacherShape a sh:NodeShape ;
+  sh:targetClass ex:Teacher ;
+  sh:property [ sh:path ex:qualification ; sh:minCount 1 ] .
+`;
+
+const INFERENCE_DATA = `@prefix ex: <http://example.org/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+ex:teaches rdfs:domain ex:Teacher .
+ex:Bob ex:teaches ex:Math .
+`;
+
+test('changing the inference dropdown actually reaches pySHACL', async ({ page }) => {
+  await page.goto('.');
+  await waitReady(page);
+  const fragment = await fragmentFor(page, {
+    shapes: INFERENCE_SHAPES,
+    data: INFERENCE_DATA,
+    shapesFormat: 'turtle',
+    dataFormat: 'turtle',
+    options: { inference: 'none', advanced: true, metaShacl: false, allowInfos: false, allowWarnings: false },
+  });
+  await page.goto(`./#${fragment}`);
+  // same-document hash navigation doesn't rerun the app; force a real load
+  await page.reload();
+  await waitReady(page);
+  await page.locator('#validate-btn').click();
+  // waitValidated matches lowercase 'conform' only; wait for a fresh
+  // conforming banner explicitly.
+  await page.waitForFunction(
+    () => {
+      const text = document.querySelector('#conforms-banner')?.textContent ?? '';
+      return text.startsWith('Conforms') && !text.includes('stale');
+    },
+    undefined,
+    { timeout: 20_000 },
+  );
+
+  await page.locator('#opt-inference').selectOption('rdfs');
+  await page.waitForFunction(
+    () => document.querySelector('#conforms-banner')?.textContent?.includes('Does not conform'),
+    undefined,
+    { timeout: 15_000 },
+  );
+  const cards = await page.locator('#tab-cards').textContent();
+  expect(cards).toContain('http://example.org/Bob');
+});
+
+test('meta_shacl failure shows the pySHACL report, not a Python traceback', async ({ page }) => {
+  await page.goto('.');
+  await waitReady(page);
+  const fragment = await fragmentFor(page, {
+    shapes: `@prefix ex: <http://example.org/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+ex:PersonShape a sh:NodeShape ;
+  sh:targetClass ex:Person ;
+  sh:property [ sh:path ex:name ; sh:minCount "one" ] .
+`,
+    data: `@prefix ex: <http://example.org/> .
+ex:Alice a ex:Person .
+`,
+    shapesFormat: 'turtle',
+    dataFormat: 'turtle',
+    options: { inference: 'none', advanced: false, metaShacl: true, allowInfos: false, allowWarnings: false },
+  });
+  await page.goto(`./#${fragment}`);
+  // same-document hash navigation doesn't rerun the app; force a real load
+  await page.reload();
+  await waitReady(page);
+  await page.locator('#validate-btn').click();
+  await page.waitForFunction(
+    () => (document.querySelector('#run-status') as HTMLElement | null)?.hidden === false,
+    undefined,
+    { timeout: 20_000 },
+  );
+  const status = await page.locator('#run-status').textContent();
+  expect(status).toContain('MetaSHACL');
+  expect(status).not.toContain('Traceback');
+});

@@ -205,6 +205,11 @@ select {
   background: var(--err-bg);
   border-bottom: 1px solid var(--err-border);
   font-size: 0.85rem;
+  /* engine errors (e.g. meta-SHACL reports) are multi-line */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 14rem;
+  overflow-y: auto;
 }
 
 .conforms-banner {

@@ -70,6 +70,14 @@ def check_parse(text, fmt):
         return json.dumps({"ok": False, "error": str(e)})
 
 def run_validation(data_text, data_format, shapes_text, shapes_format, report_format, options):
+    try:
+        return _run_validation(data_text, data_format, shapes_text, shapes_format, report_format, options)
+    except Exception as e:
+        # str(e) carries pySHACL's own report (e.g. the meta-SHACL verdict);
+        # returning it here keeps Python tracebacks out of the UI.
+        return json.dumps({"error": str(e)})
+
+def _run_validation(data_text, data_format, shapes_text, shapes_format, report_format, options):
     options = options.to_py() if hasattr(options, "to_py") else options
     data_g = Graph().parse(data=data_text, format=data_format)
     shapes_g = Graph().parse(data=shapes_text, format=shapes_format)
@@ -177,7 +185,12 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
           reportFormat,
           options,
         );
-        self.postMessage({ type: 'result', id: msg.id, result: JSON.parse(json) });
+        const parsed = JSON.parse(json);
+        if (parsed.error) {
+          self.postMessage({ type: 'error', id: msg.id, error: parsed.error });
+        } else {
+          self.postMessage({ type: 'result', id: msg.id, result: parsed });
+        }
       } finally {
         run.destroy?.();
       }

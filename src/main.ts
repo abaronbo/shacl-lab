@@ -3,6 +3,7 @@ import type { ValidationResult } from './worker';
 import {
   DEFAULT_OPTIONS,
   sanitizeFormat,
+  sanitizeOptions,
   sanitizeReportFormat,
   type Format,
   type Options,
@@ -246,8 +247,8 @@ async function runApp(): Promise<void> {
   }
 
   function currentOptions(): Options {
-    return Object.assign(Object.create(null), {
-      inference: state.options.inference,
+    return sanitizeOptions({
+      inference: inferenceSelect.value,
       advanced: advancedCheckbox.checked,
       metaShacl: metaShaclCheckbox.checked,
       allowInfos: allowInfosCheckbox.checked,

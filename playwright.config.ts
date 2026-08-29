@@ -6,11 +6,11 @@ export default defineConfig({
   testDir: 'tests',
   timeout: 120_000,
   use: {
-    baseURL: 'http://localhost:4173/shacl-playground/',
+    baseURL: 'http://localhost:4173/shacl-lab/',
   },
   webServer: {
     command: 'npm run build && npm run preview',
-    url: 'http://localhost:4173/shacl-playground/',
+    url: 'http://localhost:4173/shacl-lab/',
     timeout: 180_000,
     reuseExistingServer: false,
   },

@@ -12,6 +12,25 @@ async function waitValidated(page: Page): Promise<void> {
   );
 }
 
+test('settings menu opens, closes on Escape and outside click', async ({ page }) => {
+  await page.goto('.');
+  await waitReady(page);
+  const menu = page.locator('#settings-menu');
+  await expect(menu).toBeHidden();
+
+  await page.locator('#settings-btn').click();
+  await expect(menu).toBeVisible();
+  await expect(page.locator('#opt-inference')).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+
+  await page.locator('#settings-btn').click();
+  await expect(menu).toBeVisible();
+  await page.locator('#validate-btn').click();
+  await expect(menu).toBeHidden();
+});
+
 test('sh:sparql example produces the expected violation card', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
@@ -31,6 +50,7 @@ test('toggling advanced off removes the SPARQL-target violation', async ({ page 
   await waitValidated(page);
   await expect(page.locator('#conforms-banner')).toContainText('Does not conform');
 
+  await page.locator('#settings-btn').click();
   await page.locator('#opt-advanced').uncheck();
   await page.waitForFunction(
     () => document.querySelector('#conforms-banner')?.textContent?.includes('Conforms'),
@@ -138,6 +158,7 @@ test('changing the inference dropdown actually reaches pySHACL', async ({ page }
     { timeout: 20_000 },
   );
 
+  await page.locator('#settings-btn').click();
   await page.locator('#opt-inference').selectOption('rdfs');
   await page.waitForFunction(
     () => document.querySelector('#conforms-banner')?.textContent?.includes('Does not conform'),

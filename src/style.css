@@ -133,6 +133,43 @@ select {
   flex: 1;
 }
 
+.settings {
+  position: relative;
+}
+
+.settings-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* display:flex would otherwise defeat the hidden attribute */
+.settings-menu[hidden] {
+  display: none;
+}
+
+.setting label {
+  color: var(--text);
+  font-size: 0.85rem;
+  white-space: normal;
+}
+
+.setting-desc {
+  margin: 0.15rem 0 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .panes {
   flex: 1;
   display: grid;

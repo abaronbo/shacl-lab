@@ -195,6 +195,8 @@ async function runApp(): Promise<void> {
   const shapesFormatSelect = document.querySelector<HTMLSelectElement>('#shapes-format')!;
   const dataFormatSelect = document.querySelector<HTMLSelectElement>('#data-format')!;
   const reportFormatSelect = document.querySelector<HTMLSelectElement>('#report-format')!;
+  const settingsBtn = document.querySelector<HTMLButtonElement>('#settings-btn')!;
+  const settingsMenu = document.querySelector<HTMLDivElement>('#settings-menu')!;
   const inferenceSelect = document.querySelector<HTMLSelectElement>('#opt-inference')!;
   const advancedCheckbox = document.querySelector<HTMLInputElement>('#opt-advanced')!;
   const metaShaclCheckbox = document.querySelector<HTMLInputElement>('#opt-meta-shacl')!;
@@ -233,6 +235,25 @@ async function runApp(): Promise<void> {
     const opt = el('option', { value: String(i) }, [example.name]);
     examplesSelect.appendChild(opt);
   }
+
+  function setSettingsOpen(open: boolean): void {
+    settingsMenu.hidden = !open;
+    settingsBtn.setAttribute('aria-expanded', String(open));
+  }
+  settingsBtn.addEventListener('click', () => setSettingsOpen(Boolean(settingsMenu.hidden)));
+  document.addEventListener('pointerdown', (event) => {
+    if (settingsMenu.hidden) return;
+    const target = event.target;
+    if (target instanceof Node && !settingsMenu.contains(target) && !settingsBtn.contains(target)) {
+      setSettingsOpen(false);
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !settingsMenu.hidden) {
+      setSettingsOpen(false);
+      settingsBtn.focus();
+    }
+  });
 
   function showNotice(message: string): void {
     setText(noticeText, message);

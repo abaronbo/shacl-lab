@@ -22,19 +22,47 @@
         <button id="notice-dismiss" type="button">Dismiss</button>
       </div>
       <div class="toolbar">
-        <label
-          >Inference
-          <select id="opt-inference">
-            <option value="none">none</option>
-            <option value="rdfs">rdfs</option>
-            <option value="owlrl">owlrl</option>
-            <option value="both">both</option>
-          </select>
-        </label>
-        <label><input type="checkbox" id="opt-advanced" checked /> advanced</label>
-        <label><input type="checkbox" id="opt-meta-shacl" /> meta_shacl</label>
-        <label><input type="checkbox" id="opt-allow-infos" /> allow_infos</label>
-        <label><input type="checkbox" id="opt-allow-warnings" /> allow_warnings</label>
+        <div class="settings">
+          <button
+            id="settings-btn"
+            type="button"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-controls="settings-menu"
+          >
+            ⚙ Settings
+          </button>
+          <div id="settings-menu" class="settings-menu" hidden>
+            <div class="setting">
+              <label
+                >Inference
+                <select id="opt-inference">
+                  <option value="none">none</option>
+                  <option value="rdfs">rdfs</option>
+                  <option value="owlrl">owlrl</option>
+                  <option value="both">both</option>
+                </select>
+              </label>
+              <p class="setting-desc">Apply RDFS/OWL reasoning to the data before validating.</p>
+            </div>
+            <div class="setting">
+              <label><input type="checkbox" id="opt-advanced" checked /> advanced</label>
+              <p class="setting-desc">SHACL Advanced Features: SPARQL-based targets and rules.</p>
+            </div>
+            <div class="setting">
+              <label><input type="checkbox" id="opt-meta-shacl" /> meta_shacl</label>
+              <p class="setting-desc">Validate the shapes graph itself against SHACL-SHACL first.</p>
+            </div>
+            <div class="setting">
+              <label><input type="checkbox" id="opt-allow-infos" /> allow_infos</label>
+              <p class="setting-desc">Info-severity results don't break conformance.</p>
+            </div>
+            <div class="setting">
+              <label><input type="checkbox" id="opt-allow-warnings" /> allow_warnings</label>
+              <p class="setting-desc">Warning and Info results don't break conformance.</p>
+            </div>
+          </div>
+        </div>
         <label
           >Example
           <select id="examples-select">

@@ -70,6 +70,12 @@ body {
   flex-shrink: 0;
 }
 
+/* display:flex above would otherwise defeat the hidden attribute */
+.notice-banner[hidden],
+.boot-banner[hidden] {
+  display: none;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;

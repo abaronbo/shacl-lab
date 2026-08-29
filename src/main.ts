@@ -241,9 +241,7 @@ async function runApp(): Promise<void> {
     noticeBanner.hidden = true;
   });
 
-  if (fromFragment) {
-    showNotice('Loaded from shared link — review before running.');
-  } else if (fragmentError) {
+  if (fragmentError) {
     showNotice(fragmentError);
   }
 

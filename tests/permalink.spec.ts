@@ -45,8 +45,9 @@ test('permalink round trip: share, open fresh, no auto-run, then Validate reprod
   await page2.goto(url);
   await waitReady(page2);
 
-  await expect(page2.locator('#notice-banner')).toBeVisible();
-  await expect(page2.locator('#notice-text')).toContainText('shared link');
+  // No banner for shared-link loads (user decision 2026-08-29); the
+  // no-auto-validate gate below still applies.
+  await expect(page2.locator('#notice-banner')).toBeHidden();
   await expect(page2.locator('#conforms-banner')).toContainText('Not yet validated');
   expect(await page2.locator('#shapes-format').inputValue()).toBe(shapesFormat);
   expect(await page2.locator('#data-format').inputValue()).toBe(dataFormat);

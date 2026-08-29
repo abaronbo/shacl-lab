@@ -29,7 +29,7 @@ test('pySHACL-in-Pyodide spike: SHACL-SPARQL fixtures, budgets, no 404s, no CSP 
     }
   });
 
-  await page.goto('.');
+  await page.goto('./?spike');
   await page.waitForFunction(
     () => ['done', 'failed'].includes((window as any).__spikeResult?.status),
     undefined,

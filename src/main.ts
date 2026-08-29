@@ -1,8 +1,17 @@
-// Slice 1 spike page: boots the validation worker, runs the two fixtures,
-// exposes the outcome on window.__spikeResult for the Playwright harness,
-// and renders it as plain text (textContent only — see Security #5).
-import { SHAPES_TTL, DATA_VIOLATING_TTL, DATA_CONFORMING_TTL } from './fixtures';
+import { SHAPES_TTL, DATA_CONFORMING_TTL, DATA_VIOLATING_TTL } from './fixtures';
 import type { ValidationResult } from './worker';
+import {
+  DEFAULT_OPTIONS,
+  sanitizeFormat,
+  sanitizeReportFormat,
+  type Format,
+  type Options,
+  type ReportFormat,
+} from './options';
+import { createEditor, type PaneEditor } from './editor';
+import { el, setText, clear } from './dom';
+import { WorkerClient } from './worker-client';
+import { ValidateRunner } from './validate-runner';
 
 declare global {
   interface Window {
@@ -14,6 +23,7 @@ declare global {
       violating?: ValidationResult;
       conforming?: ValidationResult;
     };
+    __lastRunOptions?: Options;
   }
 }
 
@@ -32,64 +42,333 @@ if (tt?.createPolicy) {
   });
 }
 
-const out = document.querySelector<HTMLPreElement>('#out')!;
-const show = () => {
-  out.textContent = JSON.stringify(window.__spikeResult, null, 2);
-};
+if (new URLSearchParams(location.search).has('spike')) {
+  runSpikeMode();
+} else {
+  runApp();
+}
 
-window.__spikeResult = { status: 'booting' };
-show();
+// Slice 1 spike mode, preserved behind ?spike for tests/spike.spec.ts: boots
+// the worker, runs the two fixtures, exposes the outcome on
+// window.__spikeResult, and renders it as plain text (textContent only).
+function runSpikeMode(): void {
+  const app = document.querySelector<HTMLDivElement>('#app')!;
+  clear(app);
+  const out = el('pre', { id: 'out' });
+  app.appendChild(out);
+  const show = () => setText(out, JSON.stringify(window.__spikeResult, null, 2));
 
-const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-const t0 = performance.now();
+  window.__spikeResult = { status: 'booting' };
+  show();
 
-let nextId = 1;
-function validate(data: string): Promise<ValidationResult> {
-  return new Promise((resolve, reject) => {
-    const id = nextId++;
-    const onMessage = (ev: MessageEvent) => {
-      if (ev.data.id !== id) return;
-      worker.removeEventListener('message', onMessage);
-      if (ev.data.type === 'result') resolve(ev.data.result);
-      else reject(new Error(ev.data.error));
-    };
-    worker.addEventListener('message', onMessage);
-    worker.postMessage({
-      type: 'validate',
-      id,
-      data,
-      dataFormat: 'turtle',
-      shapes: SHAPES_TTL,
-      shapesFormat: 'turtle',
-      options: {
-        inference: 'none',
-        advanced: true,
-        metaShacl: false,
-        allowInfos: false,
-        allowWarnings: false,
-      },
+  const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+  const t0 = performance.now();
+
+  let nextId = 1;
+  function validate(data: string): Promise<ValidationResult> {
+    return new Promise((resolve, reject) => {
+      const id = nextId++;
+      const onMessage = (ev: MessageEvent) => {
+        if (ev.data.id !== id) return;
+        worker.removeEventListener('message', onMessage);
+        if (ev.data.type === 'result') resolve(ev.data.result);
+        else reject(new Error(ev.data.error));
+      };
+      worker.addEventListener('message', onMessage);
+      worker.postMessage({
+        type: 'validate',
+        id,
+        data,
+        dataFormat: 'turtle',
+        shapes: SHAPES_TTL,
+        shapesFormat: 'turtle',
+        reportFormat: 'turtle',
+        options: DEFAULT_OPTIONS,
+      });
     });
+  }
+
+  worker.addEventListener('message', async (ev: MessageEvent) => {
+    if (ev.data.type === 'boot-error') {
+      window.__spikeResult = { status: 'failed', error: ev.data.error };
+      show();
+      return;
+    }
+    if (ev.data.type !== 'ready') return;
+    const bootMs = Math.round(performance.now() - t0);
+    window.__spikeResult = { status: 'ready', bootMs };
+    show();
+    try {
+      const t1 = performance.now();
+      const violating = await validate(DATA_VIOLATING_TTL);
+      const validateMs = Math.round(performance.now() - t1);
+      const conforming = await validate(DATA_CONFORMING_TTL);
+      window.__spikeResult = { status: 'done', bootMs, validateMs, violating, conforming };
+    } catch (err) {
+      window.__spikeResult = { status: 'failed', bootMs, error: String(err) };
+    }
+    show();
   });
 }
 
-worker.addEventListener('message', async (ev: MessageEvent) => {
-  if (ev.data.type === 'boot-error') {
-    window.__spikeResult = { status: 'failed', error: ev.data.error };
-    show();
-    return;
+const MAX_INPUT_BYTES = 2 * 1024 * 1024;
+const DEBOUNCE_MS = 600;
+
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+function runApp(): void {
+  const bootBanner = document.querySelector<HTMLDivElement>('#boot-banner')!;
+  const runStatus = document.querySelector<HTMLDivElement>('#run-status')!;
+  const conformsBanner = document.querySelector<HTMLDivElement>('#conforms-banner')!;
+  const shapesErrorEl = document.querySelector<HTMLDivElement>('#shapes-error')!;
+  const dataErrorEl = document.querySelector<HTMLDivElement>('#data-error')!;
+  const shapesFormatSelect = document.querySelector<HTMLSelectElement>('#shapes-format')!;
+  const dataFormatSelect = document.querySelector<HTMLSelectElement>('#data-format')!;
+  const reportFormatSelect = document.querySelector<HTMLSelectElement>('#report-format')!;
+  const inferenceSelect = document.querySelector<HTMLSelectElement>('#opt-inference')!;
+  const advancedCheckbox = document.querySelector<HTMLInputElement>('#opt-advanced')!;
+  const metaShaclCheckbox = document.querySelector<HTMLInputElement>('#opt-meta-shacl')!;
+  const allowInfosCheckbox = document.querySelector<HTMLInputElement>('#opt-allow-infos')!;
+  const allowWarningsCheckbox = document.querySelector<HTMLInputElement>('#opt-allow-warnings')!;
+  const validateBtn = document.querySelector<HTMLButtonElement>('#validate-btn')!;
+  const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-button'));
+  const tabCards = document.querySelector<HTMLDivElement>('#tab-cards')!;
+  const tabText = document.querySelector<HTMLDivElement>('#tab-text')!;
+  const tabGraph = document.querySelector<HTMLDivElement>('#tab-graph')!;
+  const reportTextEl = document.querySelector<HTMLPreElement>('#report-text')!;
+  const reportGraphEl = document.querySelector<HTMLPreElement>('#report-graph')!;
+
+  const state = {
+    shapesFormat: 'turtle' as Format,
+    dataFormat: 'turtle' as Format,
+    options: DEFAULT_OPTIONS,
+    reportFormat: 'turtle' as ReportFormat,
+    stale: false,
+  };
+
+  function currentOptions(): Options {
+    return Object.assign(Object.create(null), {
+      inference: inferenceSelect.value,
+      advanced: advancedCheckbox.checked,
+      metaShacl: metaShaclCheckbox.checked,
+      allowInfos: allowInfosCheckbox.checked,
+      allowWarnings: allowWarningsCheckbox.checked,
+    });
   }
-  if (ev.data.type !== 'ready') return;
-  const bootMs = Math.round(performance.now() - t0);
-  window.__spikeResult = { status: 'ready', bootMs };
-  show();
-  try {
-    const t1 = performance.now();
-    const violating = await validate(DATA_VIOLATING_TTL);
-    const validateMs = Math.round(performance.now() - t1);
-    const conforming = await validate(DATA_CONFORMING_TTL);
-    window.__spikeResult = { status: 'done', bootMs, validateMs, violating, conforming };
-  } catch (err) {
-    window.__spikeResult = { status: 'failed', bootMs, error: String(err) };
+
+  function showPaneError(target: HTMLDivElement, message: string | null): void {
+    if (message) {
+      setText(target, message);
+      target.hidden = false;
+    } else {
+      target.hidden = true;
+      setText(target, '');
+    }
   }
-  show();
-});
+
+  function markStale(): void {
+    state.stale = true;
+    renderStaleIndicator();
+  }
+
+  function renderStaleIndicator(): void {
+    const staleEl = conformsBanner.querySelector('.stale');
+    if (state.stale) {
+      if (!staleEl) {
+        conformsBanner.appendChild(el('span', { class: 'stale' }, ['(stale — showing last valid result)']));
+      }
+    } else if (staleEl) {
+      staleEl.remove();
+    }
+  }
+
+  function renderResult(result: ValidationResult): void {
+    state.stale = false;
+    runStatus.hidden = true;
+    setText(runStatus, '');
+
+    conformsBanner.className = `conforms-banner ${result.conforms ? 'ok' : 'violation'}`;
+    setText(
+      conformsBanner,
+      result.conforms
+        ? 'Conforms'
+        : `Does not conform — ${result.results.length} violation${result.results.length === 1 ? '' : 's'}`,
+    );
+    renderStaleIndicator();
+
+    clear(tabCards);
+    if (result.results.length === 0) {
+      tabCards.appendChild(el('p', {}, ['No validation results.']));
+    }
+    for (const r of result.results) {
+      const card = el('div', { class: 'result-card' });
+      card.appendChild(el('div', { class: 'severity' }, [r.severity ?? 'unknown']));
+      const dl = el('dl');
+      const field = (label: string, value: string | null) => {
+        dl.appendChild(el('dt', {}, [label]));
+        dl.appendChild(el('dd', {}, [value ?? '—']));
+      };
+      field('Focus node', r.focusNode);
+      field('Result path', r.resultPath);
+      field('Message', r.message);
+      field('Source shape', r.sourceShape);
+      field('Source constraint', r.sourceConstraintComponent);
+      field('Value', r.value);
+      card.appendChild(dl);
+      tabCards.appendChild(card);
+    }
+
+    setText(reportTextEl, result.text);
+    setText(reportGraphEl, result.reportGraph);
+  }
+
+  function renderRunError(message: string): void {
+    markStale();
+    runStatus.hidden = false;
+    setText(runStatus, `Validation error: ${message}`);
+  }
+
+  function renderTimeout(): void {
+    markStale();
+    runStatus.hidden = false;
+    setText(runStatus, 'validation exceeded the time limit and was stopped');
+  }
+
+  const client = new WorkerClient(
+    (ready) => {
+      bootBanner.hidden = ready;
+      if (!ready) {
+        setText(bootBanner, 'Loading Python runtime (~10 MB, cached after first visit)…');
+      }
+    },
+    (message) => {
+      bootBanner.hidden = false;
+      setText(bootBanner, `Failed to start the validation runtime: ${message}`);
+    },
+  );
+  const validateRunner = new ValidateRunner(client);
+
+  let debounceHandle: number | undefined;
+  function scheduleAutoRun(): void {
+    window.clearTimeout(debounceHandle);
+    debounceHandle = window.setTimeout(() => {
+      void runPipeline();
+    }, DEBOUNCE_MS);
+  }
+
+  async function runPipeline(): Promise<void> {
+    const shapesText = shapesEditor.getValue();
+    const dataText = dataEditor.getValue();
+
+    if (byteLength(shapesText) > MAX_INPUT_BYTES) {
+      showPaneError(shapesErrorEl, 'Shapes input exceeds the 2MB limit.');
+      markStale();
+      return;
+    }
+    if (byteLength(dataText) > MAX_INPUT_BYTES) {
+      showPaneError(dataErrorEl, 'Data input exceeds the 2MB limit.');
+      markStale();
+      return;
+    }
+
+    let shapesParse: { ok: boolean; error: string | null };
+    let dataParse: { ok: boolean; error: string | null };
+    try {
+      [shapesParse, dataParse] = await Promise.all([
+        client.send<{ ok: boolean; error: string | null }>({
+          type: 'parse',
+          text: shapesText,
+          format: state.shapesFormat,
+        }),
+        client.send<{ ok: boolean; error: string | null }>({
+          type: 'parse',
+          text: dataText,
+          format: state.dataFormat,
+        }),
+      ]);
+    } catch {
+      // Worker was terminated mid-check (hard-cap breach elsewhere); the
+      // next edit or Validate click retries against the respawned worker.
+      return;
+    }
+
+    showPaneError(shapesErrorEl, shapesParse.ok ? null : shapesParse.error);
+    showPaneError(dataErrorEl, dataParse.ok ? null : dataParse.error);
+
+    if (!shapesParse.ok || !dataParse.ok) {
+      markStale();
+      return;
+    }
+
+    state.options = currentOptions();
+    window.__lastRunOptions = state.options;
+    validateRunner.run({
+      request: {
+        data: dataText,
+        dataFormat: state.dataFormat,
+        shapes: shapesText,
+        shapesFormat: state.shapesFormat,
+        reportFormat: state.reportFormat,
+        options: state.options,
+      },
+      onResult: renderResult,
+      onError: renderRunError,
+      onTimeout: renderTimeout,
+    });
+  }
+
+  const shapesEditor: PaneEditor = createEditor(
+    document.querySelector('#shapes-editor-host')!,
+    SHAPES_TTL,
+    state.shapesFormat,
+    () => scheduleAutoRun(),
+  );
+  const dataEditor: PaneEditor = createEditor(
+    document.querySelector('#data-editor-host')!,
+    DATA_CONFORMING_TTL,
+    state.dataFormat,
+    () => scheduleAutoRun(),
+  );
+
+  shapesFormatSelect.addEventListener('change', () => {
+    state.shapesFormat = sanitizeFormat(shapesFormatSelect.value);
+    shapesEditor.setFormat(state.shapesFormat);
+    void runPipeline();
+  });
+  dataFormatSelect.addEventListener('change', () => {
+    state.dataFormat = sanitizeFormat(dataFormatSelect.value);
+    dataEditor.setFormat(state.dataFormat);
+    void runPipeline();
+  });
+  reportFormatSelect.addEventListener('change', () => {
+    state.reportFormat = sanitizeReportFormat(reportFormatSelect.value);
+    void runPipeline();
+  });
+  for (const control of [
+    inferenceSelect,
+    advancedCheckbox,
+    metaShaclCheckbox,
+    allowInfosCheckbox,
+    allowWarningsCheckbox,
+  ]) {
+    control.addEventListener('change', () => void runPipeline());
+  }
+
+  validateBtn.addEventListener('click', () => void runPipeline());
+
+  for (const button of tabButtons) {
+    button.addEventListener('click', () => {
+      for (const b of tabButtons) b.classList.toggle('active', b === button);
+      tabCards.hidden = button.dataset.tab !== 'cards';
+      tabText.hidden = button.dataset.tab !== 'text';
+      tabGraph.hidden = button.dataset.tab !== 'graph';
+    });
+  }
+
+  conformsBanner.className = 'conforms-banner';
+  setText(conformsBanner, 'Not yet validated.');
+
+  void runPipeline();
+}

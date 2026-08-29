@@ -12,10 +12,82 @@
       content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'; object-src 'none'; require-trusted-types-for 'script'; trusted-types default"
     />
     <title>SHACL-SPARQL Playground</title>
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <h1>SHACL-SPARQL Playground — Slice 1 spike</h1>
-    <pre id="out"></pre>
+    <div id="app">
+      <div id="boot-banner" class="boot-banner" hidden></div>
+      <div class="toolbar">
+        <label
+          >Inference
+          <select id="opt-inference">
+            <option value="none">none</option>
+            <option value="rdfs">rdfs</option>
+            <option value="owlrl">owlrl</option>
+            <option value="both">both</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="opt-advanced" checked /> advanced</label>
+        <label><input type="checkbox" id="opt-meta-shacl" /> meta_shacl</label>
+        <label><input type="checkbox" id="opt-allow-infos" /> allow_infos</label>
+        <label><input type="checkbox" id="opt-allow-warnings" /> allow_warnings</label>
+        <span class="spacer"></span>
+        <button id="validate-btn" class="primary" type="button">Validate</button>
+      </div>
+      <div class="panes">
+        <section class="pane" id="shapes-pane">
+          <div class="pane-header">
+            <span>Shapes</span>
+            <select id="shapes-format">
+              <option value="turtle">turtle</option>
+              <option value="json-ld">json-ld</option>
+              <option value="nt">nt</option>
+              <option value="xml">xml</option>
+              <option value="trig">trig</option>
+            </select>
+          </div>
+          <div class="pane-body"><div id="shapes-editor-host" class="editor-host"></div></div>
+          <div id="shapes-error" class="parse-error" hidden></div>
+        </section>
+        <section class="pane" id="data-pane">
+          <div class="pane-header">
+            <span>Data</span>
+            <select id="data-format">
+              <option value="turtle">turtle</option>
+              <option value="json-ld">json-ld</option>
+              <option value="nt">nt</option>
+              <option value="xml">xml</option>
+              <option value="trig">trig</option>
+            </select>
+          </div>
+          <div class="pane-body"><div id="data-editor-host" class="editor-host"></div></div>
+          <div id="data-error" class="parse-error" hidden></div>
+        </section>
+        <section class="pane report-pane" id="report-pane">
+          <div id="run-status" class="run-status" hidden></div>
+          <div id="conforms-banner" class="conforms-banner"></div>
+          <div class="tabs">
+            <button class="tab-button active" type="button" data-tab="cards">Results</button>
+            <button class="tab-button" type="button" data-tab="text">Text</button>
+            <button class="tab-button" type="button" data-tab="graph">Graph</button>
+          </div>
+          <div id="tab-cards" class="tab-panel"></div>
+          <div id="tab-text" class="tab-panel" hidden><pre class="report-text" id="report-text"></pre></div>
+          <div id="tab-graph" class="tab-panel" hidden>
+            <div class="pane-header">
+              <span>Report graph</span>
+              <select id="report-format">
+                <option value="turtle">turtle</option>
+                <option value="json-ld">json-ld</option>
+                <option value="nt">nt</option>
+                <option value="xml">xml</option>
+              </select>
+            </div>
+            <pre class="report-graph" id="report-graph"></pre>
+          </div>
+        </section>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -299,6 +299,10 @@ select {
   display: none;
 }
 
+.spec-link {
+  overflow-wrap: anywhere;
+}
+
 .inferred-status {
   font-size: 0.85rem;
   color: var(--muted);

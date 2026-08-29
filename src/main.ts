@@ -12,7 +12,8 @@ import {
 import { decodeFragment, encodeState, type PermalinkState } from './permalink';
 import { EXAMPLES } from './examples';
 import { createEditor, type PaneEditor } from './editor';
-import { el, setText, clear } from './dom';
+import { el, setText, clear, text } from './dom';
+import { specLinkFor } from './spec-links';
 import { WorkerClient } from './worker-client';
 import { ValidateRunner } from './validate-runner';
 
@@ -338,7 +339,20 @@ async function runApp(): Promise<void> {
       field('Result path', r.resultPath);
       field('Message', r.message);
       field('Source shape', r.sourceShape);
-      field('Source constraint', r.sourceConstraintComponent);
+      dl.appendChild(el('dt', {}, ['Source constraint']));
+      // Static allowlist lookup — report content itself never becomes a href.
+      const specUrl = r.sourceConstraintComponent
+        ? specLinkFor(r.sourceConstraintComponent)
+        : null;
+      const constraintValue =
+        specUrl && r.sourceConstraintComponent
+          ? el(
+              'a',
+              { href: specUrl, target: '_blank', rel: 'noreferrer noopener', class: 'spec-link' },
+              [r.sourceConstraintComponent],
+            )
+          : text(r.sourceConstraintComponent ?? '—');
+      dl.appendChild(el('dd', {}, [constraintValue]));
       field('Value', r.value);
       card.appendChild(dl);
       tabCards.appendChild(card);

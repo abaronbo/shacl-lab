@@ -17,6 +17,10 @@
   <body>
     <div id="app">
       <div id="boot-banner" class="boot-banner" hidden></div>
+      <div id="notice-banner" class="notice-banner" hidden>
+        <span id="notice-text"></span>
+        <button id="notice-dismiss" type="button">Dismiss</button>
+      </div>
       <div class="toolbar">
         <label
           >Inference
@@ -31,8 +35,16 @@
         <label><input type="checkbox" id="opt-meta-shacl" /> meta_shacl</label>
         <label><input type="checkbox" id="opt-allow-infos" /> allow_infos</label>
         <label><input type="checkbox" id="opt-allow-warnings" /> allow_warnings</label>
+        <label
+          >Example
+          <select id="examples-select">
+            <option value="">— choose —</option>
+          </select>
+        </label>
         <span class="spacer"></span>
         <button id="validate-btn" class="primary" type="button">Validate</button>
+        <button id="share-btn" type="button">Share</button>
+        <span id="share-status"></span>
       </div>
       <div class="panes">
         <section class="pane" id="shapes-pane">

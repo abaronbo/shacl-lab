@@ -8,6 +8,8 @@ import {
   type Options,
   type ReportFormat,
 } from './options';
+import { decodeFragment, encodeState, type PermalinkState } from './permalink';
+import { EXAMPLES } from './examples';
 import { createEditor, type PaneEditor } from './editor';
 import { el, setText, clear } from './dom';
 import { WorkerClient } from './worker-client';
@@ -45,7 +47,7 @@ if (tt?.createPolicy) {
 if (new URLSearchParams(location.search).has('spike')) {
   runSpikeMode();
 } else {
-  runApp();
+  void runApp();
 }
 
 // Slice 1 spike mode, preserved behind ?spike for tests/spike.spec.ts: boots
@@ -111,6 +113,64 @@ function runSpikeMode(): void {
   });
 }
 
+type InitialState = {
+  shapes: string;
+  data: string;
+  shapesFormat: Format;
+  dataFormat: Format;
+  options: Options;
+  reportFormat: ReportFormat;
+};
+
+function fixtureState(): InitialState {
+  return {
+    shapes: SHAPES_TTL,
+    data: DATA_CONFORMING_TTL,
+    shapesFormat: 'turtle',
+    dataFormat: 'turtle',
+    options: DEFAULT_OPTIONS,
+    reportFormat: 'turtle',
+  };
+}
+
+function emptyState(): InitialState {
+  return {
+    shapes: '',
+    data: '',
+    shapesFormat: 'turtle',
+    dataFormat: 'turtle',
+    options: DEFAULT_OPTIONS,
+    reportFormat: 'turtle',
+  };
+}
+
+async function resolveInitialState(): Promise<{
+  initial: InitialState;
+  fromFragment: boolean;
+  fragmentError: string | null;
+}> {
+  const fragment = location.hash.slice(1);
+  if (!fragment) return { initial: fixtureState(), fromFragment: false, fragmentError: null };
+
+  const decoded = await decodeFragment(fragment);
+  if (!decoded.ok) {
+    return { initial: emptyState(), fromFragment: false, fragmentError: decoded.error };
+  }
+  const state = decoded.state;
+  return {
+    initial: {
+      shapes: state.shapes,
+      data: state.data,
+      shapesFormat: state.shapesFormat,
+      dataFormat: state.dataFormat,
+      options: state.options,
+      reportFormat: 'turtle',
+    },
+    fromFragment: true,
+    fragmentError: null,
+  };
+}
+
 const MAX_INPUT_BYTES = 2 * 1024 * 1024;
 const DEBOUNCE_MS = 600;
 
@@ -118,8 +178,15 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
 
-function runApp(): void {
+async function runApp(): Promise<void> {
+  // Clear a stale hash before it's ever re-derived from typing — Share only
+  // ever writes it back explicitly (Security #13).
+  const { initial, fromFragment, fragmentError } = await resolveInitialState();
+
   const bootBanner = document.querySelector<HTMLDivElement>('#boot-banner')!;
+  const noticeBanner = document.querySelector<HTMLDivElement>('#notice-banner')!;
+  const noticeText = document.querySelector<HTMLSpanElement>('#notice-text')!;
+  const noticeDismiss = document.querySelector<HTMLButtonElement>('#notice-dismiss')!;
   const runStatus = document.querySelector<HTMLDivElement>('#run-status')!;
   const conformsBanner = document.querySelector<HTMLDivElement>('#conforms-banner')!;
   const shapesErrorEl = document.querySelector<HTMLDivElement>('#shapes-error')!;
@@ -132,7 +199,10 @@ function runApp(): void {
   const metaShaclCheckbox = document.querySelector<HTMLInputElement>('#opt-meta-shacl')!;
   const allowInfosCheckbox = document.querySelector<HTMLInputElement>('#opt-allow-infos')!;
   const allowWarningsCheckbox = document.querySelector<HTMLInputElement>('#opt-allow-warnings')!;
+  const examplesSelect = document.querySelector<HTMLSelectElement>('#examples-select')!;
   const validateBtn = document.querySelector<HTMLButtonElement>('#validate-btn')!;
+  const shareBtn = document.querySelector<HTMLButtonElement>('#share-btn')!;
+  const shareStatus = document.querySelector<HTMLSpanElement>('#share-status')!;
   const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-button'));
   const tabCards = document.querySelector<HTMLDivElement>('#tab-cards')!;
   const tabText = document.querySelector<HTMLDivElement>('#tab-text')!;
@@ -141,16 +211,45 @@ function runApp(): void {
   const reportGraphEl = document.querySelector<HTMLPreElement>('#report-graph')!;
 
   const state = {
-    shapesFormat: 'turtle' as Format,
-    dataFormat: 'turtle' as Format,
-    options: DEFAULT_OPTIONS,
-    reportFormat: 'turtle' as ReportFormat,
+    shapesFormat: initial.shapesFormat,
+    dataFormat: initial.dataFormat,
+    options: initial.options,
+    reportFormat: initial.reportFormat,
+    autoValidateEnabled: !fromFragment,
     stale: false,
   };
 
+  shapesFormatSelect.value = state.shapesFormat;
+  dataFormatSelect.value = state.dataFormat;
+  reportFormatSelect.value = state.reportFormat;
+  inferenceSelect.value = state.options.inference;
+  advancedCheckbox.checked = state.options.advanced;
+  metaShaclCheckbox.checked = state.options.metaShacl;
+  allowInfosCheckbox.checked = state.options.allowInfos;
+  allowWarningsCheckbox.checked = state.options.allowWarnings;
+
+  for (const [i, example] of EXAMPLES.entries()) {
+    const opt = el('option', { value: String(i) }, [example.name]);
+    examplesSelect.appendChild(opt);
+  }
+
+  function showNotice(message: string): void {
+    setText(noticeText, message);
+    noticeBanner.hidden = false;
+  }
+  noticeDismiss.addEventListener('click', () => {
+    noticeBanner.hidden = true;
+  });
+
+  if (fromFragment) {
+    showNotice('Loaded from shared link — review before running.');
+  } else if (fragmentError) {
+    showNotice(fragmentError);
+  }
+
   function currentOptions(): Options {
     return Object.assign(Object.create(null), {
-      inference: inferenceSelect.value,
+      inference: state.options.inference,
       advanced: advancedCheckbox.checked,
       metaShacl: metaShaclCheckbox.checked,
       allowInfos: allowInfosCheckbox.checked,
@@ -254,11 +353,11 @@ function runApp(): void {
   function scheduleAutoRun(): void {
     window.clearTimeout(debounceHandle);
     debounceHandle = window.setTimeout(() => {
-      void runPipeline();
+      void runPipeline(false);
     }, DEBOUNCE_MS);
   }
 
-  async function runPipeline(): Promise<void> {
+  async function runPipeline(forceValidate: boolean): Promise<void> {
     const shapesText = shapesEditor.getValue();
     const dataText = dataEditor.getValue();
 
@@ -302,6 +401,8 @@ function runApp(): void {
       return;
     }
 
+    if (!forceValidate && !state.autoValidateEnabled) return;
+
     state.options = currentOptions();
     window.__lastRunOptions = state.options;
     validateRunner.run({
@@ -321,30 +422,30 @@ function runApp(): void {
 
   const shapesEditor: PaneEditor = createEditor(
     document.querySelector('#shapes-editor-host')!,
-    SHAPES_TTL,
-    state.shapesFormat,
+    initial.shapes,
+    initial.shapesFormat,
     () => scheduleAutoRun(),
   );
   const dataEditor: PaneEditor = createEditor(
     document.querySelector('#data-editor-host')!,
-    DATA_CONFORMING_TTL,
-    state.dataFormat,
+    initial.data,
+    initial.dataFormat,
     () => scheduleAutoRun(),
   );
 
   shapesFormatSelect.addEventListener('change', () => {
     state.shapesFormat = sanitizeFormat(shapesFormatSelect.value);
     shapesEditor.setFormat(state.shapesFormat);
-    void runPipeline();
+    void runPipeline(false);
   });
   dataFormatSelect.addEventListener('change', () => {
     state.dataFormat = sanitizeFormat(dataFormatSelect.value);
     dataEditor.setFormat(state.dataFormat);
-    void runPipeline();
+    void runPipeline(false);
   });
   reportFormatSelect.addEventListener('change', () => {
     state.reportFormat = sanitizeReportFormat(reportFormatSelect.value);
-    void runPipeline();
+    void runPipeline(false);
   });
   for (const control of [
     inferenceSelect,
@@ -353,10 +454,63 @@ function runApp(): void {
     allowInfosCheckbox,
     allowWarningsCheckbox,
   ]) {
-    control.addEventListener('change', () => void runPipeline());
+    control.addEventListener('change', () => void runPipeline(false));
   }
 
-  validateBtn.addEventListener('click', () => void runPipeline());
+  validateBtn.addEventListener('click', () => {
+    state.autoValidateEnabled = true;
+    void runPipeline(true);
+  });
+
+  shareBtn.addEventListener('click', () => void handleShare());
+  async function handleShare(): Promise<void> {
+    const permalinkState: PermalinkState = {
+      shapes: shapesEditor.getValue(),
+      data: dataEditor.getValue(),
+      shapesFormat: state.shapesFormat,
+      dataFormat: state.dataFormat,
+      options: currentOptions(),
+    };
+    const fragment = await encodeState(permalinkState);
+    const url = new URL(location.href);
+    url.hash = fragment;
+    history.replaceState(null, '', url);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setText(shareStatus, 'Copied to clipboard');
+    } catch {
+      setText(shareStatus, 'Link updated — copy it from the address bar');
+    }
+    window.setTimeout(() => setText(shareStatus, ''), 4000);
+  }
+
+  examplesSelect.addEventListener('change', () => {
+    const idx = examplesSelect.value;
+    if (idx === '') return;
+    const example = EXAMPLES[Number(idx)];
+    if (!example) return;
+
+    noticeBanner.hidden = true;
+    state.shapesFormat = example.shapesFormat;
+    state.dataFormat = example.dataFormat;
+    state.options = example.options;
+    state.autoValidateEnabled = true;
+
+    shapesFormatSelect.value = state.shapesFormat;
+    dataFormatSelect.value = state.dataFormat;
+    inferenceSelect.value = state.options.inference;
+    advancedCheckbox.checked = state.options.advanced;
+    metaShaclCheckbox.checked = state.options.metaShacl;
+    allowInfosCheckbox.checked = state.options.allowInfos;
+    allowWarningsCheckbox.checked = state.options.allowWarnings;
+
+    shapesEditor.setFormat(state.shapesFormat);
+    dataEditor.setFormat(state.dataFormat);
+    shapesEditor.setValue(example.shapes);
+    dataEditor.setValue(example.data);
+
+    void runPipeline(true);
+  });
 
   for (const button of tabButtons) {
     button.addEventListener('click', () => {
@@ -370,5 +524,5 @@ function runApp(): void {
   conformsBanner.className = 'conforms-banner';
   setText(conformsBanner, 'Not yet validated.');
 
-  void runPipeline();
+  void runPipeline(false);
 }

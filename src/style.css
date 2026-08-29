@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #f6f7f9;
   --panel-bg: #ffffff;
   --border: #d7dbe0;
@@ -14,19 +14,6 @@
   --banner-bg: #fff6da;
   --banner-border: #e0b400;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14171a;
-    --panel-bg: #1c2126;
-    --border: #333a41;
-    --text: #e7eaed;
-    --muted: #9aa4ae;
-    --ok-bg: #113322;
-    --err-bg: #3a1a18;
-    --banner-bg: #3a3110;
-  }
 }
 
 * {

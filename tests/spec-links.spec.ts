@@ -15,7 +15,7 @@ async function waitViolations(page: Page): Promise<void> {
 test('SPARQL constraint violations link to the SHACL 1.2 SPARQL spec', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('1');
+  await page.locator('#examples-select').selectOption({ label: 'sh:sparql constraint' });
   await waitViolations(page);
 
   const link = page.locator('#tab-cards a.spec-link').first();
@@ -30,7 +30,7 @@ test('SPARQL constraint violations link to the SHACL 1.2 SPARQL spec', async ({ 
 test('core constraint violations link to the SHACL 1.2 Core spec', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('3');
+  await page.locator('#examples-select').selectOption({ label: 'sh:SPARQLRule' });
   await waitViolations(page);
 
   const link = page.locator('#tab-cards a.spec-link').first();

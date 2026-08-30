@@ -15,7 +15,7 @@ async function waitValidated(page: Page): Promise<void> {
 test('validation materializes rule-derived triples in the Inferred tab', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('3');
+  await page.locator('#examples-select').selectOption({ label: 'sh:SPARQLRule' });
   await waitValidated(page);
 
   await page.locator('.tab-button[data-tab="inferred"]').click();
@@ -30,7 +30,7 @@ test('validation materializes rule-derived triples in the Inferred tab', async (
 test('shapes without rules report zero inferred triples', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('0');
+  await page.locator('#examples-select').selectOption({ label: 'W3C core example' });
   await waitValidated(page);
 
   await page.locator('.tab-button[data-tab="inferred"]').click();
@@ -41,6 +41,7 @@ test('shapes without rules report zero inferred triples', async ({ page }) => {
 test('view dropdown switches between cards, text and raw graph', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
+  await page.locator('#examples-select').selectOption({ label: 'W3C core example' });
   await waitValidated(page);
 
   await expect(page.locator('#tab-cards')).toBeVisible();
@@ -61,7 +62,6 @@ test('view dropdown switches between cards, text and raw graph', async ({ page }
 test('a broken SHACL rule with advanced on surfaces in both panes', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await waitValidated(page);
 
   const shapes = page.locator('#shapes-editor-host .cm-content');
   await shapes.click();
@@ -106,6 +106,7 @@ test('a broken SHACL rule with advanced on surfaces in both panes', async ({ pag
 test('tabs switch between validation results and inferred triples', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
+  await page.locator('#examples-select').selectOption({ label: 'W3C core example' });
   await waitValidated(page);
 
   await expect(page.locator('#tab-validation')).toBeVisible();

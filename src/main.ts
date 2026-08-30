@@ -166,6 +166,23 @@ async function resolveInitialState(): Promise<{
 const MAX_INPUT_BYTES = 2 * 1024 * 1024;
 const DEBOUNCE_MS = 600;
 
+// Textual spellings under which an IRI may appear in an editor document: a
+// prefixed name per the document's own @prefix declarations, or the full
+// <iri>. Blank node labels match neither and simply won't be found.
+function spellingsFor(iri: string, documentText: string): string[] {
+  const spellings: string[] = [];
+  const prefixRe = /@prefix\s+([A-Za-z][\w.-]*)?:\s*<([^>]*)>/g;
+  for (const match of documentText.matchAll(prefixRe)) {
+    const prefix = match[1] ?? '';
+    const ns = match[2];
+    if (ns && iri.startsWith(ns) && iri.length > ns.length) {
+      spellings.push(`${prefix}:${iri.slice(ns.length)}`);
+    }
+  }
+  spellings.push(`<${iri}>`);
+  return spellings;
+}
+
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
@@ -330,7 +347,18 @@ async function runApp(): Promise<void> {
       tabCards.appendChild(el('p', {}, ['No validation results.']));
     }
     for (const r of result.results) {
-      const card = el('div', { class: 'result-card' });
+      const card = el('div', {
+        class: 'result-card',
+        title: 'Click to locate the focus node and source shape in the editors',
+      });
+      card.addEventListener('click', (event) => {
+        // Leave clicks on the spec link alone.
+        if (event.target instanceof Element && event.target.closest('a')) return;
+        if (r.focusNode) dataEditor.locate(spellingsFor(r.focusNode, dataEditor.getValue()));
+        if (r.sourceShape) {
+          shapesEditor.locate(spellingsFor(r.sourceShape, shapesEditor.getValue()));
+        }
+      });
       card.appendChild(el('div', { class: 'severity' }, [r.severity ?? 'unknown']));
       const dl = el('dl');
       const field = (label: string, value: string | null) => {

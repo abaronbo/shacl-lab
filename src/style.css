@@ -321,7 +321,18 @@ select {
   margin-bottom: 0.6rem;
 }
 
+.cm-locate-highlight {
+  background: #fde68a;
+  outline: 1px solid #f59e0b;
+  border-radius: 2px;
+}
+
+.result-card:hover {
+  border-color: var(--accent);
+}
+
 .result-card {
+  cursor: pointer;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 0.5rem 0.7rem;

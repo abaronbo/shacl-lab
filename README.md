@@ -13,10 +13,11 @@ Try it: **https://abaronbo.github.io/shacl-lab/**
 - Every validation also runs the rules from the shapes graph; the derived triples show up in the Inferred triples tab with a count
 - Validation report shown as result cards, pySHACL's human readable text, or the raw report graph (turtle, json-ld, nt or xml)
 - Each result card links its constraint to the section of the [SHACL 1.2 spec](https://www.w3.org/TR/shacl12-core/) that defines it
-- 22 built-in examples, one per core constraint family plus the SPARQL features, mostly taken straight from the spec
+- Clicking a result card highlights the focus node in the data editor and the source shape in the shapes editor
+- 22 built-in examples, one per core constraint family plus the SPARQL features, mostly taken from the spec
 - Share button that packs the whole session (editors, formats, settings) into the URL, so a link reproduces it exactly
 - Parse errors are reported per pane without losing the last good report
-- Runaway validations (a catastrophic sh:pattern regex, for example) are killed after 10 seconds and the app keeps working
+- Runaway validations are killed after 10 seconds and the app keeps working
 
 ## Settings
 

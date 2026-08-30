@@ -124,17 +124,6 @@ type InitialState = {
   reportFormat: ReportFormat;
 };
 
-function fixtureState(): InitialState {
-  return {
-    shapes: SHAPES_TTL,
-    data: DATA_CONFORMING_TTL,
-    shapesFormat: 'turtle',
-    dataFormat: 'turtle',
-    options: DEFAULT_OPTIONS,
-    reportFormat: 'turtle',
-  };
-}
-
 function emptyState(): InitialState {
   return {
     shapes: '',
@@ -152,7 +141,8 @@ async function resolveInitialState(): Promise<{
   fragmentError: string | null;
 }> {
   const fragment = location.hash.slice(1);
-  if (!fragment) return { initial: fixtureState(), fromFragment: false, fragmentError: null };
+  // No fragment: start with an empty canvas.
+  if (!fragment) return { initial: emptyState(), fromFragment: false, fragmentError: null };
 
   const decoded = await decodeFragment(fragment);
   if (!decoded.ok) {
@@ -204,6 +194,8 @@ async function runApp(): Promise<void> {
   const allowInfosCheckbox = document.querySelector<HTMLInputElement>('#opt-allow-infos')!;
   const allowWarningsCheckbox = document.querySelector<HTMLInputElement>('#opt-allow-warnings')!;
   const examplesSelect = document.querySelector<HTMLSelectElement>('#examples-select')!;
+  const exampleDesc = document.querySelector<HTMLDivElement>('#example-desc')!;
+  const clearBtn = document.querySelector<HTMLButtonElement>('#clear-btn')!;
   const validateBtn = document.querySelector<HTMLButtonElement>('#validate-btn')!;
   const shareBtn = document.querySelector<HTMLButtonElement>('#share-btn')!;
   const shareStatus = document.querySelector<HTMLSpanElement>('#share-status')!;
@@ -226,6 +218,9 @@ async function runApp(): Promise<void> {
     reportFormat: initial.reportFormat,
     autoValidateEnabled: !fromFragment,
     stale: false,
+    // Whether a validation result has ever been rendered; the stale tag is
+    // meaningless (and misleading) before the first one.
+    hasResult: false,
   };
 
   shapesFormatSelect.value = state.shapesFormat;
@@ -237,9 +232,15 @@ async function runApp(): Promise<void> {
   allowInfosCheckbox.checked = state.options.allowInfos;
   allowWarningsCheckbox.checked = state.options.allowWarnings;
 
+  const exampleGroups = new Map<string, HTMLOptGroupElement>();
   for (const [i, example] of EXAMPLES.entries()) {
-    const opt = el('option', { value: String(i) }, [example.name]);
-    examplesSelect.appendChild(opt);
+    let groupEl = exampleGroups.get(example.group);
+    if (!groupEl) {
+      groupEl = el('optgroup', { label: example.group });
+      exampleGroups.set(example.group, groupEl);
+      examplesSelect.appendChild(groupEl);
+    }
+    groupEl.appendChild(el('option', { value: String(i) }, [example.name]));
   }
 
   function setSettingsOpen(open: boolean): void {
@@ -300,7 +301,7 @@ async function runApp(): Promise<void> {
 
   function renderStaleIndicator(): void {
     const staleEl = conformsBanner.querySelector('.stale');
-    if (state.stale) {
+    if (state.stale && state.hasResult) {
       if (!staleEl) {
         conformsBanner.appendChild(el('span', { class: 'stale' }, ['(stale — showing last valid result)']));
       }
@@ -311,6 +312,7 @@ async function runApp(): Promise<void> {
 
   function renderResult(result: ValidationResult): void {
     state.stale = false;
+    state.hasResult = true;
     runStatus.hidden = true;
     setText(runStatus, '');
 
@@ -427,9 +429,14 @@ async function runApp(): Promise<void> {
     }, DEBOUNCE_MS);
   }
 
-  // Byte caps + per-pane parse checks shared by Validate and Infer; returns
-  // the editor texts only when both panes are parseable.
+  // Bumped by Clear so parse results that were in flight for discarded
+  // content never repaint the reset panes.
+  let inputEpoch = 0;
+
+  // Byte caps + per-pane parse checks; returns the editor texts only when
+  // both panes are parseable.
   async function checkInputs(): Promise<{ shapesText: string; dataText: string } | null> {
+    const epoch = inputEpoch;
     const shapesText = shapesEditor.getValue();
     const dataText = dataEditor.getValue();
 
@@ -464,6 +471,7 @@ async function runApp(): Promise<void> {
       // next edit or Validate click retries against the respawned worker.
       return null;
     }
+    if (epoch !== inputEpoch) return null;
 
     showPaneError(shapesErrorEl, shapesParse.ok ? null : shapesParse.error);
     showPaneError(dataErrorEl, dataParse.ok ? null : dataParse.error);
@@ -571,6 +579,8 @@ async function runApp(): Promise<void> {
     if (!example) return;
 
     noticeBanner.hidden = true;
+    setText(exampleDesc, example.description);
+    exampleDesc.hidden = false;
     state.shapesFormat = example.shapesFormat;
     state.dataFormat = example.dataFormat;
     state.options = example.options;
@@ -611,8 +621,50 @@ async function runApp(): Promise<void> {
   reportViewSelect.addEventListener('change', applyReportView);
   applyReportView();
 
-  conformsBanner.className = 'conforms-banner';
-  setText(conformsBanner, 'Not yet validated.');
+  function resetReportPane(): void {
+    conformsBanner.className = 'conforms-banner';
+    setText(conformsBanner, 'Not yet validated.');
+    runStatus.hidden = true;
+    setText(runStatus, '');
+    clear(tabCards);
+    setText(reportTextEl, '');
+    setText(reportGraphEl, '');
+    setText(inferredStatusEl, '');
+    setText(inferredGraphEl, '');
+    showPaneError(shapesErrorEl, null);
+    showPaneError(dataErrorEl, null);
+  }
 
-  void runPipeline(false);
+  clearBtn.addEventListener('click', () => {
+    shapesEditor.setValue('');
+    dataEditor.setValue('');
+    examplesSelect.value = '';
+    exampleDesc.hidden = true;
+    setText(exampleDesc, '');
+    state.options = Object.assign(Object.create(null), DEFAULT_OPTIONS);
+    inferenceSelect.value = state.options.inference;
+    advancedCheckbox.checked = state.options.advanced;
+    metaShaclCheckbox.checked = state.options.metaShacl;
+    allowInfosCheckbox.checked = state.options.allowInfos;
+    allowWarningsCheckbox.checked = state.options.allowWarnings;
+    state.autoValidateEnabled = true;
+    state.stale = false;
+    state.hasResult = false;
+    // setValue('') schedules a debounced auto-run on an empty canvas; cancel
+    // it, discard any in-flight run and stale parse checks, and present the
+    // untouched initial state.
+    window.clearTimeout(debounceHandle);
+    validateRunner.cancel();
+    inputEpoch++;
+    resetReportPane();
+  });
+
+  resetReportPane();
+
+  // An empty canvas stays quiet until the user types, picks an example, or
+  // clicks Validate; anything pre-filled (a shared link) still gets its
+  // parse checks.
+  if (shapesEditor.getValue() !== '' || dataEditor.getValue() !== '') {
+    void runPipeline(false);
+  }
 }

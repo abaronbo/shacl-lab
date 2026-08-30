@@ -34,19 +34,87 @@ test('settings menu opens, closes on Escape and outside click', async ({ page })
 test('sh:sparql example produces the expected violation card', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('1');
+  await page.locator('#examples-select').selectOption({ label: 'sh:sparql constraint' });
   await waitValidated(page);
   const banner = await page.locator('#conforms-banner').textContent();
   expect(banner).toContain('Does not conform');
   const cards = await page.locator('#tab-cards').textContent();
-  expect(cards).toContain('Death date must not precede birth date');
-  expect(cards).toContain('http://example.org/Alice');
+  expect(cards).toContain('Values are literals with German language tag.');
+  expect(cards).toContain('http://example.org/ns#InvalidCountry');
+});
+
+test('Clear during an in-flight run discards its late result', async ({ page }) => {
+  await page.goto('.');
+  await waitReady(page);
+
+  // Selecting an example starts a validation that takes over a second;
+  // clearing immediately must win: the late result may not repaint anything.
+  await page.locator('#examples-select').selectOption({ label: 'sh:SPARQLRule' });
+  await page.locator('#clear-btn').click();
+
+  await page.waitForTimeout(3000);
+  await expect(page.locator('#conforms-banner')).toHaveText('Not yet validated.');
+  await expect(page.locator('#tab-cards')).toHaveText('');
+  await expect(page.locator('#inferred-status')).toHaveText('');
+  await expect(page.locator('#run-status')).toBeHidden();
+  await expect(page.locator('#shapes-error')).toBeHidden();
+});
+
+test('parse error before any result shows no stale tag', async ({ page }) => {
+  await page.goto('.');
+  await waitReady(page);
+
+  const shapes = page.locator('#shapes-editor-host .cm-content');
+  await shapes.click();
+  await page.keyboard.type('this is not turtle');
+  await page.waitForFunction(
+    () => (document.querySelector('#shapes-error') as HTMLElement | null)?.hidden === false,
+    undefined,
+    { timeout: 20_000 },
+  );
+  // No validation result ever rendered, so no "(stale — showing last valid
+  // result)" nonsense may appear.
+  await expect(page.locator('#conforms-banner')).toHaveText('Not yet validated.');
+});
+
+test('boots to an empty canvas; Clear returns to it after an example', async ({ page }) => {
+  await page.goto('.');
+  await waitReady(page);
+
+  await expect(page.locator('#conforms-banner')).toHaveText('Not yet validated.');
+  await expect(page.locator('#example-desc')).toBeHidden();
+  expect(await page.locator('#shapes-editor-host .cm-content').textContent()).toBe('');
+  expect(await page.locator('#data-editor-host .cm-content').textContent()).toBe('');
+  // The empty canvas stays quiet: no auto-validation on boot.
+  await page.waitForTimeout(1000);
+  await expect(page.locator('#conforms-banner')).toHaveText('Not yet validated.');
+
+  await page.locator('#examples-select').selectOption({ label: 'sh:sparql constraint' });
+  await waitValidated(page);
+  await expect(page.locator('#example-desc')).toBeVisible();
+
+  await page.locator('#clear-btn').click();
+  await expect(page.locator('#conforms-banner')).toHaveText('Not yet validated.');
+  await expect(page.locator('#example-desc')).toBeHidden();
+  await expect(page.locator('#examples-select')).toHaveValue('');
+  expect(await page.locator('#shapes-editor-host .cm-content').textContent()).toBe('');
+  await expect(page.locator('#tab-cards')).toHaveText('');
+  await expect(page.locator('#inferred-status')).toHaveText('');
+  // The debounced auto-run from clearing the editors must not fire.
+  await page.waitForTimeout(1000);
+  await expect(page.locator('#conforms-banner')).toHaveText('Not yet validated.');
+
+  // Typing after Clear validates again (vacuously conforming input).
+  const shapes = page.locator('#shapes-editor-host .cm-content');
+  await shapes.click();
+  await page.keyboard.type('@prefix ex: <http://example.org/> .');
+  await expect(page.locator('#conforms-banner')).toContainText('Conforms', { timeout: 20_000 });
 });
 
 test('toggling advanced off removes the SPARQL-target violation', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('2');
+  await page.locator('#examples-select').selectOption({ label: 'SPARQL-based target' });
   await waitValidated(page);
   await expect(page.locator('#conforms-banner')).toContainText('Does not conform');
 
@@ -63,7 +131,7 @@ test('toggling advanced off removes the SPARQL-target violation', async ({ page 
 test('sh:SPARQLRule example materializes triples a plain shape then reports on', async ({ page }) => {
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('3');
+  await page.locator('#examples-select').selectOption({ label: 'sh:SPARQLRule' });
   await waitValidated(page);
   const banner = await page.locator('#conforms-banner').textContent();
   expect(banner).toContain('Does not conform');
@@ -90,7 +158,7 @@ test('bad turtle shows a parse error without crashing the worker', async ({ page
   expect(err?.length).toBeGreaterThan(0);
 
   // App stays usable: loading a known-good example still validates.
-  await page.locator('#examples-select').selectOption('1');
+  await page.locator('#examples-select').selectOption({ label: 'sh:sparql constraint' });
   await waitValidated(page);
   await expect(page.locator('#conforms-banner')).toContainText('Does not conform');
 });
@@ -102,7 +170,7 @@ test('a normal validation run produces zero CSP/Trusted-Types console violations
   });
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('1');
+  await page.locator('#examples-select').selectOption({ label: 'sh:sparql constraint' });
   await waitValidated(page);
   expect(violations, violations.join('\n')).toEqual([]);
 });

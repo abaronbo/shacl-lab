@@ -29,7 +29,7 @@ test('permalink round trip: share, open fresh, no auto-run, then Validate reprod
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('.');
   await waitReady(page);
-  await page.locator('#examples-select').selectOption('1');
+  await page.locator('#examples-select').selectOption({ label: 'sh:sparql constraint' });
   await waitValidated(page);
   const originalBanner = await page.locator('#conforms-banner').textContent();
   const originalCards = await page.locator('#tab-cards').textContent();
@@ -177,7 +177,7 @@ test('ReDoS sh:pattern is terminated at the 10s cap, then the app validates agai
   );
   await expect(page.locator('body')).toBeVisible();
 
-  await page.locator('#examples-select').selectOption('1');
+  await page.locator('#examples-select').selectOption({ label: 'sh:sparql constraint' });
   await waitValidated(page);
   await expect(page.locator('#conforms-banner')).toContainText('Does not conform');
 });

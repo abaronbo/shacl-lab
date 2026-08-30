@@ -34,6 +34,16 @@ export class ValidateRunner {
     void this.start(job);
   }
 
+  // Discard the in-flight run's callbacks and the queue (used by Clear): the
+  // UI was reset, so a late result must not repaint it. The hard-cap timer
+  // stays armed and still terminates the worker if that run turns out to be
+  // stuck; it just no longer reports the timeout to the UI.
+  cancel(): void {
+    this.generation++;
+    this.inFlight = false;
+    this.queued = [];
+  }
+
   private async start<R>(job: RunJob<R>): Promise<void> {
     this.inFlight = true;
     const gen = ++this.generation;
@@ -48,9 +58,13 @@ export class ValidateRunner {
     }
     if (gen !== this.generation) return;
 
+    let settled = false;
     const timeoutHandle = window.setTimeout(() => {
-      if (gen !== this.generation) return;
+      if (settled) return;
+      // Terminate even when this run was cancelled: the worker is stuck on
+      // it and would otherwise burn CPU forever.
       this.client.terminate('validation exceeded the time limit and was stopped');
+      if (gen !== this.generation) return;
       this.generation++;
       this.inFlight = false;
       const next = this.queued.shift();
@@ -61,12 +75,14 @@ export class ValidateRunner {
     this.client
       .send<{ type: 'result'; result: R }>(job.request)
       .then((res) => {
+        settled = true;
         if (gen !== this.generation) return;
         window.clearTimeout(timeoutHandle);
         this.finish();
         job.onResult(res.result);
       })
       .catch((err) => {
+        settled = true;
         if (gen !== this.generation) return;
         window.clearTimeout(timeoutHandle);
         this.finish();

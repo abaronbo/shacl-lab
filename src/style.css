@@ -299,6 +299,18 @@ select {
   display: none;
 }
 
+.example-desc {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--pane-bg, transparent);
+}
+
+.example-desc[hidden] {
+  display: none;
+}
+
 .spec-link {
   overflow-wrap: anywhere;
 }

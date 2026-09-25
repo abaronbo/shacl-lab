@@ -9,7 +9,15 @@ import {
   type Options,
   type ReportFormat,
 } from './options';
-import { decodeFragment, encodeState, type PermalinkState } from './permalink';
+import {
+  MAX_SESSION_FILE_BYTES,
+  SESSION_FILE_NAME,
+  decodeFragment,
+  encodeState,
+  parseSessionJson,
+  serializeSessionFile,
+  type PermalinkState,
+} from './permalink';
 import { EXAMPLES } from './examples';
 import { createEditor, type PaneEditor } from './editor';
 import { el, setText, clear, text } from './dom';
@@ -216,6 +224,9 @@ async function runApp(): Promise<void> {
   const validateBtn = document.querySelector<HTMLButtonElement>('#validate-btn')!;
   const shareBtn = document.querySelector<HTMLButtonElement>('#share-btn')!;
   const shareStatus = document.querySelector<HTMLSpanElement>('#share-status')!;
+  const downloadBtn = document.querySelector<HTMLButtonElement>('#download-btn')!;
+  const openBtn = document.querySelector<HTMLButtonElement>('#open-btn')!;
+  const openFileInput = document.querySelector<HTMLInputElement>('#open-file')!;
   const tabButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.tab-button'));
   const tabValidation = document.querySelector<HTMLDivElement>('#tab-validation')!;
   const tabInferred = document.querySelector<HTMLDivElement>('#tab-inferred')!;
@@ -578,41 +589,22 @@ async function runApp(): Promise<void> {
     void runPipeline(true);
   });
 
-  shareBtn.addEventListener('click', () => void handleShare());
-  async function handleShare(): Promise<void> {
-    const permalinkState: PermalinkState = {
+  function currentSession(): PermalinkState {
+    return {
       shapes: shapesEditor.getValue(),
       data: dataEditor.getValue(),
       shapesFormat: state.shapesFormat,
       dataFormat: state.dataFormat,
       options: currentOptions(),
     };
-    const fragment = await encodeState(permalinkState);
-    const url = new URL(location.href);
-    url.hash = fragment;
-    history.replaceState(null, '', url);
-    try {
-      await navigator.clipboard.writeText(url.toString());
-      setText(shareStatus, 'Copied to clipboard');
-    } catch {
-      setText(shareStatus, 'Link updated — copy it from the address bar');
-    }
-    window.setTimeout(() => setText(shareStatus, ''), 4000);
   }
 
-  examplesSelect.addEventListener('change', () => {
-    const idx = examplesSelect.value;
-    if (idx === '') return;
-    const example = EXAMPLES[Number(idx)];
-    if (!example) return;
-
-    noticeBanner.hidden = true;
-    setText(exampleDesc, example.description);
-    exampleDesc.hidden = false;
-    state.shapesFormat = example.shapesFormat;
-    state.dataFormat = example.dataFormat;
-    state.options = example.options;
-    state.autoValidateEnabled = true;
+  // Replace the whole editable session (editors, formats, settings) with an
+  // already-sanitized state. Callers decide whether a run follows.
+  function applySession(session: PermalinkState): void {
+    state.shapesFormat = session.shapesFormat;
+    state.dataFormat = session.dataFormat;
+    state.options = session.options;
 
     shapesFormatSelect.value = state.shapesFormat;
     dataFormatSelect.value = state.dataFormat;
@@ -624,8 +616,105 @@ async function runApp(): Promise<void> {
 
     shapesEditor.setFormat(state.shapesFormat);
     dataEditor.setFormat(state.dataFormat);
-    shapesEditor.setValue(example.shapes);
-    dataEditor.setValue(example.data);
+    shapesEditor.setValue(session.shapes);
+    dataEditor.setValue(session.data);
+  }
+
+  let statusTimer: number | undefined;
+  function flashStatus(message: string): void {
+    setText(shareStatus, message);
+    window.clearTimeout(statusTimer);
+    statusTimer = window.setTimeout(() => setText(shareStatus, ''), 4000);
+  }
+
+  shareBtn.addEventListener('click', () => void handleShare());
+  async function handleShare(): Promise<void> {
+    const fragment = await encodeState(currentSession());
+    const url = new URL(location.href);
+    url.hash = fragment;
+    history.replaceState(null, '', url);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      flashStatus('Copied to clipboard');
+    } catch {
+      flashStatus('Link updated — copy it from the address bar');
+    }
+  }
+
+  // Session file export/import: the same JSON a permalink carries, as a
+  // download, for sessions too large to survive a URL. Import runs through
+  // the identical allowlist parser as a shared link (Security #3/#4).
+  downloadBtn.addEventListener('click', () => {
+    const blob = new Blob([serializeSessionFile(currentSession())], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    const anchor = el('a', { href, download: SESSION_FILE_NAME });
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    // Give the download a moment to start before the URL is revoked.
+    window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+    flashStatus('Session downloaded');
+  });
+
+  openBtn.addEventListener('click', () => openFileInput.click());
+  openFileInput.addEventListener('change', () => void handleOpenFile());
+  async function handleOpenFile(): Promise<void> {
+    const file = openFileInput.files?.[0];
+    // Reset so choosing the same file again re-fires `change`.
+    openFileInput.value = '';
+    if (!file) return;
+
+    if (file.size > MAX_SESSION_FILE_BYTES) {
+      showNotice('session file is too large or malformed');
+      return;
+    }
+    let json: string;
+    try {
+      json = await file.text();
+    } catch {
+      showNotice('session file could not be read');
+      return;
+    }
+    const parsed = parseSessionJson(json, 'session file');
+    if (!parsed.ok) {
+      showNotice(parsed.error);
+      return;
+    }
+
+    noticeBanner.hidden = true;
+    examplesSelect.value = '';
+    exampleDesc.hidden = true;
+    setText(exampleDesc, '');
+    applySession(parsed.state);
+    // Like a shared link: parse checks run, validation waits for the user.
+    state.autoValidateEnabled = false;
+    window.clearTimeout(debounceHandle);
+    validateRunner.cancel();
+    inputEpoch++;
+    resetReportPane();
+    state.stale = false;
+    state.hasResult = false;
+    flashStatus('Session loaded');
+    void runPipeline(false);
+  }
+
+  examplesSelect.addEventListener('change', () => {
+    const idx = examplesSelect.value;
+    if (idx === '') return;
+    const example = EXAMPLES[Number(idx)];
+    if (!example) return;
+
+    noticeBanner.hidden = true;
+    setText(exampleDesc, example.description);
+    exampleDesc.hidden = false;
+    state.autoValidateEnabled = true;
+    applySession({
+      shapes: example.shapes,
+      data: example.data,
+      shapesFormat: example.shapesFormat,
+      dataFormat: example.dataFormat,
+      options: example.options,
+    });
 
     void runPipeline(true);
   });

@@ -15,6 +15,11 @@ export type PermalinkState = {
 const MAX_DECOMPRESSED_BYTES = 2 * 1024 * 1024;
 const MAX_EDITOR_CHARS = 1_000_000;
 
+// Session files carry the same JSON as a permalink, uncompressed, so they get
+// the same byte budget the decompressor enforces.
+export const MAX_SESSION_FILE_BYTES = MAX_DECOMPRESSED_BYTES;
+export const SESSION_FILE_NAME = 'shacl-session.json';
+
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -30,14 +35,24 @@ function base64UrlDecode(value: string): Uint8Array {
   return bytes;
 }
 
-export async function encodeState(state: PermalinkState): Promise<string> {
-  const json = JSON.stringify({
+function plainState(state: PermalinkState): Record<string, unknown> {
+  return {
     shapes: state.shapes,
     data: state.data,
     shapesFormat: state.shapesFormat,
     dataFormat: state.dataFormat,
     options: state.options,
-  });
+  };
+}
+
+// Human-readable file form of a session. `version` is informational: the
+// decoder ignores unknown fields, so files and fragments share one parser.
+export function serializeSessionFile(state: PermalinkState): string {
+  return JSON.stringify({ version: 1, ...plainState(state) }, null, 2) + '\n';
+}
+
+export async function encodeState(state: PermalinkState): Promise<string> {
+  const json = JSON.stringify(plainState(state));
   const input = new Blob([json]).stream().pipeThrough(new CompressionStream('deflate-raw'));
   const compressed = new Uint8Array(await new Response(input).arrayBuffer());
   return base64UrlEncode(compressed);
@@ -83,21 +98,27 @@ export async function decodeFragment(fragment: string): Promise<DecodeResult> {
     return { ok: false, error: 'shared link is malformed' };
   }
 
+  return parseSessionJson(json, 'shared link');
+}
+
+// Shared tail of both loaders. `source` names the input in error messages
+// ("shared link" or "session file"); every field is re-validated regardless.
+export function parseSessionJson(json: string, source: string): DecodeResult {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
   } catch {
-    return { ok: false, error: 'shared link is malformed' };
+    return { ok: false, error: `${source} is malformed` };
   }
   if (!raw || typeof raw !== 'object') {
-    return { ok: false, error: 'shared link is malformed' };
+    return { ok: false, error: `${source} is malformed` };
   }
 
   const src = raw as Record<string, unknown>;
   const shapes = typeof src.shapes === 'string' ? src.shapes : '';
   const data = typeof src.data === 'string' ? src.data : '';
   if (shapes.length > MAX_EDITOR_CHARS || data.length > MAX_EDITOR_CHARS) {
-    return { ok: false, error: 'shared link is too large or malformed' };
+    return { ok: false, error: `${source} is too large or malformed` };
   }
 
   // Security #4: null-prototype object built field-by-field from the

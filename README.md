@@ -16,6 +16,7 @@ Try it: **https://abaronbo.github.io/shacl-lab/**
 - Clicking a result card highlights the focus node in the data editor and the source shape in the shapes editor
 - 22 built-in examples, one per core constraint family plus the SPARQL features, mostly taken from the spec
 - Share button that packs the whole session (editors, formats, settings) into the URL, so a link reproduces it exactly
+- Download and Open buttons that save the same session as a JSON file and load it back, for sessions too large to fit in a link
 - Parse errors are reported per pane without losing the last good report
 - Runaway validations are killed after 10 seconds and the app keeps working
 
